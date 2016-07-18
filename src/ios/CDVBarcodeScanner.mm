@@ -48,7 +48,7 @@
 - (void)scan:(CDVInvokedUrlCommand*)command;
 - (void)encode:(CDVInvokedUrlCommand*)command;
 - (void)returnImage:(NSString*)filePath format:(NSString*)format callback:(NSString*)callback;
-- (void)returnSuccess:(NSString*)scannedText format:(NSString*)format cancelled:(BOOL)cancelled flipped:(BOOL)flipped callback:(NSString*)callback;
+- (void)returnSuccess:(NSString*)scannedText format:(NSString*)format cancelled:(BOOL)cancelled flipped:(BOOL)flipped openAlbum:(BOOL)openAlbum callback:(NSString*)callback;
 - (void)returnError:(NSString*)message callback:(NSString*)callback;
 @end
 
@@ -78,6 +78,7 @@
 - (void)barcodeScanSucceeded:(NSString*)text format:(NSString*)format;
 - (void)barcodeScanFailed:(NSString*)message;
 - (void)barcodeScanCancelled;
+- (void)openAlbum;
 - (void)openDialog;
 - (NSString*)setUpCaptureSession;
 - (void)captureOutput:(AVCaptureOutput*)captureOutput didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection*)connection;
@@ -118,7 +119,7 @@
 - (UIImage*)buildReticleImage;
 - (void)shutterButtonPressed;
 - (IBAction)cancelButtonPressed:(id)sender;
-
+- (IBAction)albumButtonPressed:(id)sender;
 @end
 
 //------------------------------------------------------------------------------
@@ -219,13 +220,15 @@
 }
 
 //--------------------------------------------------------------------------
-- (void)returnSuccess:(NSString*)scannedText format:(NSString*)format cancelled:(BOOL)cancelled flipped:(BOOL)flipped callback:(NSString*)callback{
+- (void)returnSuccess:(NSString*)scannedText format:(NSString*)format cancelled:(BOOL)cancelled flipped:(BOOL)flipped openAlbum:(BOOL)openAlbum callback:(NSString*)callback{
     NSNumber* cancelledNumber = [NSNumber numberWithInt:(cancelled?1:0)];
+    NSNumber* openAlbumNumber = [NSNumber numberWithInt:(openAlbum?1:0)];
 
     NSMutableDictionary* resultDict = [[NSMutableDictionary alloc] init];
     [resultDict setObject:scannedText     forKey:@"text"];
     [resultDict setObject:format          forKey:@"format"];
     [resultDict setObject:cancelledNumber forKey:@"cancelled"];
+    [resultDict setObject:openAlbumNumber forKey:@"openAlbum"];
 
     CDVPluginResult* result = [CDVPluginResult
                                resultWithStatus: CDVCommandStatus_OK
@@ -381,7 +384,7 @@ parentViewController:(UIViewController*)parentViewController
 - (void)barcodeScanSucceeded:(NSString*)text format:(NSString*)format {
     dispatch_sync(dispatch_get_main_queue(), ^{
         [self barcodeScanDone:^{
-            [self.plugin returnSuccess:text format:format cancelled:FALSE flipped:FALSE callback:self.callback];
+            [self.plugin returnSuccess:text format:format cancelled:FALSE flipped:FALSE openAlbum:FALSE callback:self.callback];
         }];
         AudioServicesPlaySystemSound(_soundFileObject);
     });
@@ -397,7 +400,17 @@ parentViewController:(UIViewController*)parentViewController
 //--------------------------------------------------------------------------
 - (void)barcodeScanCancelled {
     [self barcodeScanDone:^{
-        [self.plugin returnSuccess:@"" format:@"" cancelled:TRUE flipped:self.isFlipped callback:self.callback];
+        [self.plugin returnSuccess:@"" format:@"" cancelled:TRUE flipped:self.isFlipped openAlbum:FALSE callback:self.callback];
+    }];
+    if (self.isFlipped) {
+        self.isFlipped = NO;
+    }
+}
+
+//--------------------------------------------------------------------------
+- (void)openAlbum {
+    [self barcodeScanDone:^{
+        [self.plugin returnSuccess:@"" format:@"" cancelled:TRUE flipped:self.isFlipped openAlbum:TRUE callback:self.callback];
     }];
     if (self.isFlipped) {
         self.isFlipped = NO;
@@ -911,6 +924,11 @@ parentViewController:(UIViewController*)parentViewController
     [self.processor performSelector:@selector(barcodeScanCancelled) withObject:nil afterDelay:0];
 }
 
+//--------------------------------------------------------------------------
+- (IBAction)albumButtonPressed:(id)sender {
+    [self.processor performSelector:@selector(openAlbum) withObject:nil afterDelay:0];
+}
+
 - (void)flipCameraButtonPressed:(id)sender
 {
     [self.processor performSelector:@selector(flipCamera) withObject:nil afterDelay:0];
@@ -953,6 +971,13 @@ parentViewController:(UIViewController*)parentViewController
                        target:(id)self
                        action:@selector(cancelButtonPressed:)
                        ];
+    
+    id openAlbumButton = [[UIBarButtonItem alloc]
+                          initWithTitle:@"Album"
+                          style:UIBarButtonItemStyleBordered
+                          target:(id)self
+                          action:@selector(albumButtonPressed:)
+                          ];
 
 
     id flexSpace = [[UIBarButtonItem alloc]
@@ -975,15 +1000,15 @@ parentViewController:(UIViewController*)parentViewController
                         ];
 
     if (_processor.isShowFlipCameraButton) {
-      toolbar.items = [NSArray arrayWithObjects:flexSpace,cancelButton,flexSpace, flipCamera ,shutterButton,nil];
+      toolbar.items = [NSArray arrayWithObjects:flexSpace,cancelButton,flexSpace, openAlbumButton, flexSpace, flipCamera ,shutterButton,nil];
     } else {
-      toolbar.items = [NSArray arrayWithObjects:flexSpace,cancelButton,flexSpace ,shutterButton,nil];
+      toolbar.items = [NSArray arrayWithObjects:flexSpace,cancelButton,flexSpace, openAlbumButton, flexSpace, shutterButton,nil];
     }
 #else
     if (_processor.isShowFlipCameraButton) {
-      toolbar.items = [NSArray arrayWithObjects:flexSpace,cancelButton,flexSpace, flipCamera,nil];
+      toolbar.items = [NSArray arrayWithObjects:flexSpace,cancelButton,flexSpace, openAlbumButton, flexSpace, flipCamera,nil];
     } else {
-      toolbar.items = [NSArray arrayWithObjects:flexSpace,cancelButton,flexSpace,nil];
+      toolbar.items = [NSArray arrayWithObjects:flexSpace,cancelButton,flexSpace, openAlbumButton, flexSpace, nil];
     }
 #endif
     bounds = overlayView.bounds;
