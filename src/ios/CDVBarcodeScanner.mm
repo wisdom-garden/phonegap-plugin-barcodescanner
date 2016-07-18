@@ -52,7 +52,7 @@
 //------------------------------------------------------------------------------
 // class that does the grunt work
 //------------------------------------------------------------------------------
-@interface CDVbcsProcessor : NSObject <AVCaptureMetadataOutputObjectsDelegate> {}
+@interface CDVbcsProcessor : NSObject <AVCaptureMetadataOutputObjectsDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate> {}
 @property (nonatomic, retain) CDVBarcodeScanner*           plugin;
 @property (nonatomic, retain) NSString*                   callback;
 @property (nonatomic, retain) UIViewController*           parentViewController;
@@ -77,9 +77,11 @@
 - (void)barcodeScanSucceeded:(NSString*)text format:(NSString*)format;
 - (void)barcodeScanFailed:(NSString*)message;
 - (void)barcodeScanCancelled;
+- (void)openAlbum;
 - (void)openDialog;
 - (NSString*)setUpCaptureSession;
 - (void)captureOutput:(AVCaptureOutput*)captureOutput didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection*)connection;
+- (void)decodeCodeFromImage:(UIImage*)srcImage;
 - (NSString*)formatStringFrom:(zxing::BarcodeFormat)format;
 - (UIImage*)getImageFromSample:(CMSampleBufferRef)sampleBuffer;
 - (zxing::Ref<zxing::LuminanceSource>) getLuminanceSourceFromSample:(CMSampleBufferRef)sampleBuffer imageBytes:(uint8_t**)ptr;
@@ -117,7 +119,7 @@
 - (UIImage*)buildReticleImage;
 - (void)shutterButtonPressed;
 - (IBAction)cancelButtonPressed:(id)sender;
-
+- (IBAction)albumButtonPressed:(id)sender;
 @end
 
 //------------------------------------------------------------------------------
@@ -427,6 +429,27 @@ parentViewController:(UIViewController*)parentViewController
     }
 }
 
+//--------------------------------------------------------------------------
+- (void)openAlbum {
+    UIImagePickerController *picker = [[UIImagePickerController alloc] init];
+    picker.delegate = self;
+    picker.allowsEditing = YES;
+    picker.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
+    
+    [self.viewController presentViewController:picker animated:YES completion:NULL];
+}
+
+- (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary *)info {
+    UIImage *image = info[UIImagePickerControllerEditedImage];
+    [picker dismissViewControllerAnimated:YES completion:NULL];
+    [self decodeCodeFromImage: image];
+}
+
+- (void)imagePickerControllerDidCancel:(UIImagePickerController *)picker {
+    [picker dismissViewControllerAnimated:YES completion:NULL];
+}
+
+//--------------------------------------------------------------------------
 - (void)flipCamera {
     self.isFlipped = YES;
     self.isFrontCamera = !self.isFrontCamera;
@@ -584,6 +607,23 @@ parentViewController:(UIViewController*)parentViewController
     //        NSTimeInterval timeElapsed  = [NSDate timeIntervalSinceReferenceDate] - timeStart;
     //        NSLog(@"decoding completed in %dms", (int) (timeElapsed * 1000));
 
+}
+
+-(void) decodeCodeFromImage:(UIImage*) srcImage {
+    CIContext *context = [CIContext contextWithOptions:nil];
+    CIDetector *detector = [CIDetector detectorOfType:CIDetectorTypeQRCode context:context options:@{CIDetectorAccuracy:CIDetectorAccuracyHigh}];
+    CIImage *image = [CIImage imageWithCGImage:srcImage.CGImage];
+    NSArray *features = [detector featuresInImage:image];
+    CIQRCodeFeature *feature = [features firstObject];
+    
+    NSString *result = feature.messageString;
+    if(result == nil) {
+        result = @"";
+    }
+    
+    [self barcodeScanDone:^{
+        [self.plugin returnSuccess:result format:@"QR_CODE" cancelled:FALSE flipped:self.isFlipped callback:self.callback];
+    }];
 }
 
 //--------------------------------------------------------------------------
@@ -923,6 +963,11 @@ parentViewController:(UIViewController*)parentViewController
     [self.processor performSelector:@selector(barcodeScanCancelled) withObject:nil afterDelay:0];
 }
 
+//--------------------------------------------------------------------------
+- (IBAction)albumButtonPressed:(id)sender {
+    [self.processor performSelector:@selector(openAlbum) withObject:nil afterDelay:0];
+}
+
 - (void)flipCameraButtonPressed:(id)sender
 {
     [self.processor performSelector:@selector(flipCamera) withObject:nil afterDelay:0];
@@ -971,6 +1016,13 @@ parentViewController:(UIViewController*)parentViewController
                        action:@selector(cancelButtonPressed:)
                        ] autorelease];
 
+    id openAlbumButton = [[UIBarButtonItem alloc]
+                          initWithTitle:NSLocalizedString(@"UI_ALBUM", nil)
+                          style:UIBarButtonItemStyleBordered
+                          target:(id)self
+                          action:@selector(albumButtonPressed:)
+                          ];
+
 
     id flexSpace = [[[UIBarButtonItem alloc]
                     initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace
@@ -994,15 +1046,15 @@ parentViewController:(UIViewController*)parentViewController
                         ] autorelease];
 
     if (_processor.isShowFlipCameraButton) {
-      items = [NSMutableArray arrayWithObjects:flexSpace, cancelButton, flexSpace, flipCamera, shutterButton, nil];
+      items = [NSMutableArray arrayWithObjects:flexSpace, cancelButton, flexSpace, openAlbumButton, flexSpace, flipCamera, shutterButton, nil];
     } else {
-      items = [NSMutableArray arrayWithObjects:flexSpace, cancelButton, flexSpace, shutterButton, nil];
+      items = [NSMutableArray arrayWithObjects:flexSpace, cancelButton, flexSpace, openAlbumButton, flexSpace, shutterButton, nil];
     }
 #else
     if (_processor.isShowFlipCameraButton) {
-      items = [@[flexSpace, cancelButton, flexSpace, flipCamera] mutableCopy];
+      items = [@[flexSpace, cancelButton, flexSpace, openAlbumButton, flexSpace, flipCamera] mutableCopy];
     } else {
-      items = [@[flexSpace, cancelButton, flexSpace] mutableCopy];
+      items = [@[flexSpace, cancelButton, flexSpace, openAlbumButton, flexSpace] mutableCopy];
     }
 #endif
 
