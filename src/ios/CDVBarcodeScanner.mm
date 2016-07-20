@@ -1000,7 +1000,7 @@ parentViewController:(UIViewController*)parentViewController
                        ];
     
     id openAlbumButton = [[UIBarButtonItem alloc]
-                          initWithTitle:@"Album"
+                          initWithTitle:NSLocalizedString(@"UI_ALBUM", nil)
                           style:UIBarButtonItemStyleBordered
                           target:(id)self
                           action:@selector(albumButtonPressed:)
